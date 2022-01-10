@@ -1,8 +1,9 @@
-package file_monitor
+package monitor
 
 import (
 	"fmt"
 	"log"
+	"lxraa/utils"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -25,6 +26,7 @@ var fd int
 
 /**
 	为文件file添加inotify监控，并返回fd和watched句柄用于关闭
+	另外注意，inotify不能在/proc用来监控进程：https://bugs.launchpad.net/ubuntu/+source/linux/+bug/454722
 **/
 func addWatcherToFile(file string) (w int, fd int) {
 
@@ -191,64 +193,57 @@ func eventParser(pointer *syscall.InotifyEvent) *FileEvent {
 	return pFileEvent
 }
 
-const BATCH_SIZE = 2048
+// const BATCH_SIZE = 2048
 
-type Memlist struct {
-	Len    int
-	Buffer [BATCH_SIZE]byte
-	next   *Memlist
-}
+// type Memlist struct {
+// 	Len    int
+// 	Buffer [BATCH_SIZE]byte
+// 	next   *Memlist
+// }
 
-/**
-读取fd中所有bytes
-**/
-func readBytesFromFd(fd int) []byte {
+// /**
+// 读取fd中所有bytes
+// **/
+// func readBytesFromFd(fd int) []byte {
+// 	tmpBuffer := new(Memlist)
+// 	start := tmpBuffer
+// 	allLen := 0
+// 	for {
 
-	tmpBuffer := new(Memlist)
-	start := tmpBuffer
-	allLen := 0
-	for {
+// 		bytesRead, err := syscall.Read(fd, tmpBuffer.Buffer[:])
+// 		allLen = allLen + bytesRead
+// 		tmpBuffer.Len = bytesRead
+// 		if err != nil {
+// 			log.Fatal(err)
+// 		}
 
-		bytesRead, err := syscall.Read(fd, tmpBuffer.Buffer[:])
-		allLen = allLen + bytesRead
-		tmpBuffer.Len = bytesRead
-		if err != nil {
-			log.Fatal(err)
-		}
+// 		if bytesRead == BATCH_SIZE {
+// 			tmpBuffer.next = new(Memlist)
+// 			tmpBuffer = tmpBuffer.next
+// 			continue
+// 		}
+// 		break
+// 	}
+// 	result := make([]byte, allLen)
+// 	p := start
+// 	offset := 0
+// 	for p != nil {
+// 		copy(result[offset:offset+p.Len], p.Buffer[:p.Len])
+// 		offset = offset + p.Len
+// 		p = p.next
+// 	}
 
-		if bytesRead == BATCH_SIZE {
-			tmpBuffer.next = new(Memlist)
-			tmpBuffer = tmpBuffer.next
-			continue
-		}
-		break
-	}
-	result := make([]byte, allLen)
-	p := start
-	offset := 0
-	for p != nil {
-		copy(result[offset:offset+p.Len], p.Buffer[:p.Len])
-		offset = offset + p.Len
-		p = p.next
-	}
+// 	return result
+// }
 
-	return result
-}
-
-func Start(eventChannel chan interface{}) {
+func StartFileM(eventChannel chan interface{}) {
 	filePath := "/home/liuxiaorui/test/test.txt"
-
 	log.Println("application start.")
-
-	// fd, err := unix.EpollCreate(10)
-	// if err != nil {
-	// 	unix.
-	// }
 	w, fd = addWatcherToFile(filePath)
 
 	go func() {
 		for {
-			buffer := readBytesFromFd(fd)
+			buffer := utils.ReadBytesFromFd(fd)
 
 			if len(buffer) < syscall.SizeofInotifyEvent {
 				// No point trying if we don't have at least one event
@@ -263,12 +258,6 @@ func Start(eventChannel chan interface{}) {
 				// fmt.Printf("offset:%d\n", offset)
 				event := (*syscall.InotifyEvent)(unsafe.Pointer(&buffer[offset]))
 				fileEvent := eventParser(event)
-				// log.Println(fileEvent.filename)
-				// for k := 0; k < len(fileEvent.events); k++ {
-				// 	fmt.Println(fileEvent.events[k].eventDec)
-				// 	fmt.Println(fileEvent.filename)
-				// }
-				// fmt.Println("------------")
 				// 输出到channel，由main统一处理
 				eventChannel <- fileEvent
 				if (fileEvent.Mask & syscall.IN_IGNORED) > 0 {
@@ -285,7 +274,7 @@ func Start(eventChannel chan interface{}) {
 	}()
 }
 
-func End() {
+func EndFileM() {
 	log.Println("application end.")
 	rmWatcherFromFile(fd, uint32(w))
 	syscall.Close(fd)

@@ -2,21 +2,18 @@ package main
 
 import (
 	"fmt"
-	fileMonitor "lxraa/file_monitor"
+	"lxraa/monitor"
 )
 
-func ReadGlobalConfig() {
-
-}
-
 func main() {
+
 	channel := make(chan interface{})
-	fileMonitor.Start(channel)
-	defer fileMonitor.End()
+	monitor.StartFileM(channel)
+	defer monitor.EndFileM()
 	for {
 		event := <-channel
 		switch event := event.(type) {
-		case *fileMonitor.FileEvent:
+		case *monitor.FileEvent:
 			for i := 0; i < len(event.Events); i++ {
 				fmt.Println(event.Events[i].EventDec)
 			}
